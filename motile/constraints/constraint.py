@@ -16,4 +16,3 @@ class Constraint(ABC):
 
             A list of :class:`ilpy.LinearConstraint`.
         """
-        pass

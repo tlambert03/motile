@@ -63,7 +63,6 @@ class Variable(ABC):
             A list of keys (anything that is hashable, e.g., nodes of a graph),
             one for each variable to create.
         """
-        pass
 
     @staticmethod
     def instantiate_constraints(solver):

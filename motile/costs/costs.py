@@ -14,4 +14,3 @@ class Costs(ABC):
             solver (:class:`Solver`):
                 The solver to create costs for.
         """
-        pass
