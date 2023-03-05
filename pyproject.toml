@@ -41,3 +41,9 @@ path = "motile/__init__.py"
 exclude_lines = ["pragma: no cover", "pragma: ${PY_MAJOR_VERSION} no cover"]
 show_missing = true
 skip_covered = true
+
+[tool.mypy]
+files = "motile"
+strict=true
+allow_untyped_defs=true  # TODO: can eventually fill out typing and remove this
+ignore_missing_imports = true

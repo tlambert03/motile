@@ -1,9 +1,21 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, TypeVar, cast
 from .constraints import SelectEdgeNodes
 import logging
 import numpy as np
 import ilpy
 
+from motile.constraints.constraint import Constraint
+
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from motile.variables import Variable
+    from motile.costs import Costs
+    from motile.track_graph import TrackGraph
+
+    V = TypeVar('V', bound=Variable)
 
 
 class Solver:
@@ -20,23 +32,25 @@ class Solver:
             edges are added.
     """
 
-    def __init__(self, track_graph, skip_core_constraints=False):
+    def __init__(
+        self, track_graph: TrackGraph, skip_core_constraints: bool = False
+    ) -> None:
 
         self.graph = track_graph
-        self.variables = {}
+        self.variables: dict[type[Variable], Variable] = {}
 
-        self.ilp_solver = None
-        self.objective = None
+        self.ilp_solver: ilpy.LinearSolver | None = None
+        self.objective: ilpy.LinearObjective | None = None
         self.constraints = ilpy.LinearConstraints()
 
-        self.num_variables = 0
+        self.num_variables: int = 0
         self.costs = np.zeros((0,), dtype=np.float32)
-        self.solution = None
+        self.solution: ilpy.Solution | None = None
 
         if not skip_core_constraints:
             self.add_constraints(SelectEdgeNodes())
 
-    def add_costs(self, costs):
+    def add_costs(self, costs: Costs) -> None:
         """Add linear costs to the value of variables in this solver.
 
         Args:
@@ -44,11 +58,10 @@ class Solver:
             costs (:class:`motile.costs.Costs`):
                 The costs to add.
         """
-
         logger.info("Adding %s costs...", type(costs).__name__)
         costs.apply(self)
 
-    def add_constraints(self, constraints):
+    def add_constraints(self, constraints: Constraint) -> None:
         """Add linear constraints to the solver.
 
         Args:
@@ -62,7 +75,9 @@ class Solver:
         for constraint in constraints.instantiate(self):
             self.constraints.add(constraint)
 
-    def solve(self, timeout=0.0, num_threads=1):
+    def solve(
+        self, timeout: float = 0.0, num_threads: int = 1
+    ) -> ilpy.Solution:
         """Solve the global optimization problem.
 
         Args:
@@ -98,7 +113,7 @@ class Solver:
 
         self.ilp_solver.set_num_threads(num_threads)
         if timeout > 0:
-            self.ilp_solver.set_timeout(self.timeout)
+            self.ilp_solver.set_timeout(timeout)
 
         self.solution, message = self.ilp_solver.solve()
         if len(message):
@@ -106,7 +121,7 @@ class Solver:
 
         return self.solution
 
-    def get_variables(self, cls):
+    def get_variables(self, cls: type[V]) -> V:
         """Get variables by their class name.
 
         If the solver does not yet contain those variables, they will be
@@ -114,9 +129,8 @@ class Solver:
 
         Args:
 
-            cls (class name):
-                The name of a class inheriting from
-                :class:`motile.variables.Variable`.
+            cls (type of :class:`motile.variables.Variable`):
+                A subclass of :class:`motile.variables.Variable`.
 
         Returns:
 
@@ -127,31 +141,29 @@ class Solver:
 
         if cls not in self.variables:
             self._add_variables(cls)
+        return cast('V', self.variables[cls])
 
-        return self.variables[cls]
-
-    def add_variable_cost(self, index, cost):
+    def add_variable_cost(self, index: int, cost: float) -> None:
         """Add costs for an individual variable.
 
         To be used within implementations of :class:`motile.costs.Costs`.
         """
-
         self.costs[index] += cost
 
-    def _add_variables(self, cls):
+    def _add_variables(self, cls: type[V]) -> None:
 
         logger.info("Adding %s variables...", cls.__name__)
 
         keys = cls.instantiate(self)
         indices = self._allocate_variables(len(keys))
-        variables = cls(self, {k: i for k, i in zip(keys, indices)})
+        variables = cls(self, dict(zip(keys, indices)))
         self.variables[cls] = variables
 
         for constraint in cls.instantiate_constraints(self):
             self.constraints.add(constraint)
 
     # TODO: add variable_type
-    def _allocate_variables(self, num_variables):
+    def _allocate_variables(self, num_variables: int) -> range:
 
         indices = range(
             self.num_variables,

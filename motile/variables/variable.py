@@ -1,4 +1,11 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING, Hashable, Iterable, Sequence
+
+if TYPE_CHECKING:
+    from motile.solver import Solver
+    import ilpy
 
 
 class Variable(ABC):
@@ -32,7 +39,7 @@ class Variable(ABC):
 
     @staticmethod
     @abstractmethod
-    def instantiate(solver):
+    def instantiate(solver: Solver) -> Sequence[Hashable]:
         """Create and return keys for the variables.
 
         For example, to create a variable for each node, this function would
@@ -65,7 +72,7 @@ class Variable(ABC):
         """
 
     @staticmethod
-    def instantiate_constraints(solver):
+    def instantiate_constraints(solver: Solver) -> list[ilpy.LinearConstraint]:
         """Add linear constraints to the solver to ensure that these variables
         are coupled to other variables of the solver.
 
@@ -82,15 +89,16 @@ class Variable(ABC):
         """
         return []
 
-    def __init__(self, solver, index_map):
+    def __init__(
+        self, solver: Solver, index_map: dict[Hashable, int]
+    ) -> None:
         self._solver = solver
         self._index_map = index_map
 
-    def __repr__(self):
-
+    def __repr__(self) -> str:
         rs = []
         for key, index in self._index_map.items():
-            r = type(self).__name__ + f"({key}): "
+            r = f"{type(self).__name__}({key}): "
             r += f"cost={self._solver.costs[index]} "
             if self._solver.solution is not None:
                 r += f"value={self._solver.solution[index]}"
@@ -99,14 +107,14 @@ class Variable(ABC):
             rs.append(r)
         return "\n".join(rs)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: Hashable) -> int:
         return self._index_map[key]
 
-    def items(self):
+    def items(self) -> Iterable[tuple[Hashable, int]]:
         return self._index_map.items()
 
-    def keys(self):
+    def keys(self) -> Iterable[Hashable]:
         return self._index_map.keys()
 
-    def values(self):
+    def values(self) -> Iterable[int]:
         return self._index_map.values()

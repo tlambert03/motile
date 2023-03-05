@@ -2,11 +2,19 @@ from .track_graph import TrackGraph
 import networkx as nx
 
 
-def get_tracks(graph, require_selected=False, selected_attribute='selected'):
-    '''Get a generator of track graphs, each corresponding to one track
+def get_tracks(
+    graph: TrackGraph,
+    require_selected: bool = False,
+    selected_attribute: str = "selected",
+) -> list[TrackGraph]:
+    '''Return a list of track graphs, each corresponding to one track.
+
     (i.e., a connected component in the track graph).
 
     Args:
+        graph (:class:`TrackGraph`):
+
+            The track graph to split into tracks.
 
         require_selected (``bool``):
 
@@ -42,6 +50,6 @@ def get_tracks(graph, require_selected=False, selected_attribute='selected'):
         TrackGraph(
             graph_data=graph.subgraph(g).copy(),
             frame_attribute=graph.frame_attribute,
-            roi=graph.roi)
+        )
         for g in nx.weakly_connected_components(graph)
     ]
