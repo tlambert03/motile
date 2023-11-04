@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import operator
 from typing import TYPE_CHECKING, TypeVar, cast
 
 import ilpy
@@ -14,12 +15,25 @@ from .ssvm import fit_weights
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
+    import pulp as pl
+
     from motile.costs import Costs
     from motile.track_graph import TrackGraph
     from motile.variables import Variable
 
     V = TypeVar("V", bound=Variable)
 
+class Solver:
+    
+    def __init__(self, ...):
+        self._constraints: set[ilpy.Constraint] = set()
+
+    @property
+    def constraints(self) -> ilpy.Constraints:
+        c = ilpy.Constraints()
+        for constraint in self._constraints:
+            c.add(constraint)
+        return c
 
 class Solver:
     """Create a solver for a given track graph.
@@ -48,7 +62,7 @@ class Solver:
 
         self.ilp_solver: ilpy.Solver | None = None
         self.objective: ilpy.Objective | None = None
-        self.constraints = ilpy.Constraints()
+        self._constraints: set[ilpy.Constraint] = set()
 
         self.num_variables: int = 0
         self._costs = np.zeros((0,), dtype=np.float32)
@@ -57,6 +71,13 @@ class Solver:
 
         if not skip_core_constraints:
             self.add_constraints(SelectEdgeNodes())
+
+    @property
+    def constraints(self) -> ilpy.Constraints:
+        c = ilpy.Constraints()
+        for constraint in self._constraints:
+            c.add(constraint)
+        return c
 
     def add_costs(self, costs: Costs, name: str | None = None) -> None:
         """Add linear costs to the value of variables in this solver.
@@ -103,7 +124,12 @@ class Solver:
         logger.info("Adding %s constraints...", type(constraints).__name__)
 
         for constraint in constraints.instantiate(self):
-            self.constraints.add(constraint)
+            c = (
+                constraint.as_constraint()
+                if hasattr(constraint, "as_constraint")
+                else constraint
+            )
+            self._constraints.add(c)
 
     def solve(self, timeout: float = 0.0, num_threads: int = 1) -> ilpy.Solution:
         """Solve the global optimization problem.
@@ -123,9 +149,9 @@ class Solver:
             vector.
         """
         self.objective = ilpy.Objective(self.num_variables)
-        for i, c in enumerate(self.costs):
-            logger.debug("Setting cost of var %d to %.3f", i, c)
-            self.objective.set_coefficient(i, c)
+        for i, cc in enumerate(self.costs):
+            logger.debug("Setting cost of var %d to %.3f", i, cc)
+            self.objective.set_coefficient(i, cc)
 
         # TODO: support other variable types
         self.ilp_solver = ilpy.Solver(
@@ -148,7 +174,40 @@ class Solver:
         if message := self.solution.get_status():
             logger.info("ILP solver returned with: %s", message)
 
+        ps = self.pulp_solver()
+        ps.solve()
+        assert self.solution.get_value() == (ps.objective.value() or 0)
+        vals = [v.value() for v in ps.variables()]
+        assert vals == list(self.solution)
         return self.solution
+
+    def pulp_solver(self) -> pl.LpProblem:
+        import pulp as pl
+
+        # Create the 'prob' variable to contain the problem data
+        prob = pl.LpProblem("Problem", pl.LpMinimize)
+        prob.solver = pl.getSolver('GUROBI')
+
+        variables = [
+            pl.LpVariable(f"x{i}", cat=v.name) for i, v in self.variable_types.items()
+        ]
+
+        # Objective function
+        prob += pl.lpSum([c * variables[i] for i, c in enumerate(self.costs)])
+
+        # Constraints
+        for c in self._constraints:
+            op = {
+                ilpy.Relation.Equal: operator.eq,
+                ilpy.Relation.GreaterEqual: operator.ge,
+                ilpy.Relation.LessEqual: operator.le,
+            }[c.get_relation()]
+            prob += op(
+                pl.lpSum([c * variables[i] for i, c in c.get_coefficients().items()]),
+                c.get_value(),
+            )
+
+        return prob
 
     def get_variables(self, cls: type[V]) -> V:
         """Get variables by their class name.
@@ -238,7 +297,12 @@ class Solver:
             self.variable_types[index] = cls.variable_type
 
         for constraint in cls.instantiate_constraints(self):
-            self.constraints.add(constraint)
+            c = (
+                constraint.as_constraint()
+                if hasattr(constraint, "as_constraint")
+                else constraint
+            )
+            self._constraints.add(c)
 
         self.features.resize(num_variables=self.num_variables)
 
